@@ -1141,8 +1141,6 @@ static int rknpu_probe(struct platform_device *pdev)
 		}
 	}
 
-   config = &rk3588_rknpu_config;
-
 	rknpu_dev->config = config;
 	rknpu_dev->dev = dev;
 

@@ -21,13 +21,11 @@
 #define _REG_WRITE(base, value, offset) writel(value, base + (offset))
 
 #define REG_READ(offset) _REG_READ(rknpu_core_base, offset)
-#define REG_WRITE(value, offset) _REG_WRITE(rknpu_core_base, value, offset); if (offset != 0x24) printk("writel: 0x%x 0x%llx\n", offset, (uint64_t)value);
+#define REG_WRITE(value, offset) _REG_WRITE(rknpu_core_base, value, offset)
 
 static int rknpu_wait_core_index(int core_mask)
 {
 	int index = 0;
-
-   printk("*** %s\n", __func__);
 
 	switch (core_mask) {
 	case RKNPU_CORE0_MASK:
@@ -52,8 +50,6 @@ static int rknpu_core_mask(int core_index)
 {
 	int core_mask = RKNPU_CORE_AUTO_MASK;
 
-   printk("*** %s\n", __func__);
-
 	switch (core_index) {
 	case 0:
 		core_mask = RKNPU_CORE0_MASK;
@@ -75,8 +71,6 @@ static int rknpu_get_task_number(struct rknpu_job *job, int core_index)
 {
 	struct rknpu_device *rknpu_dev = job->rknpu_dev;
 	int task_num = job->args->task_number;
-
-   printk("*** %s\n", __func__);
 
 	if (core_index >= RKNPU_MAX_CORES || core_index < 0) {
 		LOG_ERROR("invalid rknpu core index: %d", core_index);
@@ -100,8 +94,6 @@ static void rknpu_job_free(struct rknpu_job *job)
 #ifdef CONFIG_ROCKCHIP_RKNPU_DRM_GEM
 	struct rknpu_gem_object *task_obj = NULL;
 
-   printk("*** %s\n", __func__);
-
 	task_obj =
 		(struct rknpu_gem_object *)(uintptr_t)job->args->task_obj_addr;
 	if (task_obj)
@@ -119,8 +111,6 @@ static void rknpu_job_free(struct rknpu_job *job)
 
 static int rknpu_job_cleanup(struct rknpu_job *job)
 {
-   printk("*** %s\n", __func__);
-
 	rknpu_job_free(job);
 
 	return 0;
@@ -130,8 +120,6 @@ static void rknpu_job_cleanup_work(struct work_struct *work)
 {
 	struct rknpu_job *job =
 		container_of(work, struct rknpu_job, cleanup_work);
-
-   printk("*** %s\n", __func__);
 
 	rknpu_job_cleanup(job);
 }
@@ -143,8 +131,6 @@ static inline struct rknpu_job *rknpu_job_alloc(struct rknpu_device *rknpu_dev,
 #ifdef CONFIG_ROCKCHIP_RKNPU_DRM_GEM
 	struct rknpu_gem_object *task_obj = NULL;
 #endif
-
-   printk("*** %s\n", __func__);
 
 	job = kzalloc(sizeof(*job), GFP_KERNEL);
 	if (!job)
@@ -196,8 +182,6 @@ static inline int rknpu_job_wait(struct rknpu_job *job)
 	bool continue_wait = false;
 	int ret = -EINVAL;
 	int i = 0;
-
-   printk("*** %s\n", __func__);
 
 	subcore_data = &rknpu_dev->subcore_datas[core_index];
 
@@ -306,8 +290,6 @@ static inline int rknpu_job_subcore_commit_pc(struct rknpu_job *job,
 	int max_submit_number = rknpu_dev->config->max_submit_number;
 	unsigned long flags;
 
-   printk("*** %s: task_obj %p\n", __func__, task_obj);
-
 	if (!task_obj) {
 		job->ret = -EINVAL;
 		return job->ret;
@@ -352,8 +334,6 @@ static inline int rknpu_job_subcore_commit_pc(struct rknpu_job *job,
 	first_task = &task_base[task_start];
 	last_task = &task_base[task_end];
 
-   printk("*** %s: core_index %d job->use_core_num %d task_start %d task_number %d task_end %d first_task %p last_task %p task_base %p\n", __func__, core_index, job->use_core_num, task_start, task_number, task_end, first_task, last_task, task_base);
-
 	if (rknpu_dev->config->pc_dma_ctrl) {
 		spin_lock_irqsave(&rknpu_dev->irq_lock, flags);
 		REG_WRITE(first_task->regcmd_addr, RKNPU_OFFSET_PC_DATA_ADDR);
@@ -395,8 +375,6 @@ static inline int rknpu_job_subcore_commit(struct rknpu_job *job,
 	void __iomem *rknpu_core_base = rknpu_dev->base[core_index];
 	unsigned long flags;
 
-   printk("*** %s\n", __func__);
-
 	// switch to slave mode
 	if (rknpu_dev->config->pc_dma_ctrl) {
 		spin_lock_irqsave(&rknpu_dev->irq_lock, flags);
@@ -416,8 +394,6 @@ static inline int rknpu_job_subcore_commit(struct rknpu_job *job,
 
 static void rknpu_job_commit(struct rknpu_job *job)
 {
-   printk("*** %s: job->args->core_mask %x\n", __func__, job->args->core_mask);
-
 	switch (job->args->core_mask) {
 	case RKNPU_CORE0_MASK:
 		rknpu_job_subcore_commit(job, 0);
@@ -448,8 +424,6 @@ static void rknpu_job_next(struct rknpu_device *rknpu_dev, int core_index)
 	struct rknpu_job *job = NULL;
 	struct rknpu_subcore_data *subcore_data = NULL;
 	unsigned long flags;
-
-   //printk("*** %s: core_index %d\n", __func__, core_index);
 
 	if (rknpu_dev->soft_reseting)
 		return;
@@ -484,8 +458,6 @@ static void rknpu_job_done(struct rknpu_job *job, int ret, int core_index)
 	ktime_t now;
 	unsigned long flags;
 	int max_submit_number = rknpu_dev->config->max_submit_number;
-
-   printk("*** %s: core_index %d\n", __func__, core_index);
 
 	if (atomic_inc_return(&job->submit_count[core_index]) <
 	    (rknpu_get_task_number(job, core_index) + max_submit_number - 1) /
@@ -532,8 +504,6 @@ static int rknpu_schedule_core_index(struct rknpu_device *rknpu_dev)
 	int core_index = 0;
 	int i = 0;
 
-   printk("*** %s\n", __func__);
-
 	for (i = 1; i < core_num; i++) {
 		if (task_num > rknpu_dev->subcore_datas[i].task_num) {
 			core_index = i;
@@ -550,8 +520,6 @@ static void rknpu_job_schedule(struct rknpu_job *job)
 	struct rknpu_subcore_data *subcore_data = NULL;
 	int i = 0, core_index = 0;
 	unsigned long flags;
-
-   printk("*** %s:\n", __func__);
 
 	if (job->args->core_mask == RKNPU_CORE_AUTO_MASK) {
 		core_index = rknpu_schedule_core_index(rknpu_dev);
@@ -583,8 +551,6 @@ static void rknpu_job_abort(struct rknpu_job *job)
 	struct rknpu_subcore_data *subcore_data = NULL;
 	unsigned long flags;
 	int i = 0;
-
-   printk("*** %s\n", __func__);
 
 	msleep(100);
 
@@ -653,8 +619,6 @@ static inline uint32_t rknpu_fuzz_status(uint32_t status)
 	if ((status & 0xc00) != 0)
 		fuzz_status |= 0xc00;
 
-   printk("*** %s: status %x fuzz %x\n", __func__, status, fuzz_status);
-
 	return fuzz_status;
 }
 
@@ -665,13 +629,7 @@ static inline irqreturn_t rknpu_irq_handler(int irq, void *data, int core_index)
 	struct rknpu_subcore_data *subcore_data = NULL;
 	struct rknpu_job *job = NULL;
 	uint32_t status = 0;
-   uint32_t raw_status = 0;
 	unsigned long flags;
-
-	status = REG_READ(RKNPU_OFFSET_INT_STATUS);
-   raw_status = REG_READ(RKNPU_OFFSET_INT_RAW_STATUS);
-
-   printk("*** %s: core_index %d status %x raw %x\n", __func__, core_index, status, raw_status);
 
 	subcore_data = &rknpu_dev->subcore_datas[core_index];
 
@@ -686,12 +644,14 @@ static inline irqreturn_t rknpu_irq_handler(int irq, void *data, int core_index)
 	job->irq_entry[core_index] = true;
 	spin_unlock_irqrestore(&rknpu_dev->irq_lock, flags);
 
+	status = REG_READ(RKNPU_OFFSET_INT_STATUS);
+
 	job->int_status[core_index] = status;
 
 	if (rknpu_fuzz_status(status) != job->int_mask[core_index]) {
 		LOG_ERROR(
-			"%s: invalid irq status: %#x, raw status: %#x, require mask: %#x, task counter: %#x\n",
-			__func__, status, REG_READ(RKNPU_OFFSET_INT_RAW_STATUS),
+			"invalid irq status: %#x, raw status: %#x, require mask: %#x, task counter: %#x\n",
+			status, REG_READ(RKNPU_OFFSET_INT_RAW_STATUS),
 			job->int_mask[core_index],
 			(REG_READ(rknpu_dev->config->pc_task_status_offset) &
 			 rknpu_dev->config->pc_task_number_mask));
@@ -708,19 +668,16 @@ static inline irqreturn_t rknpu_irq_handler(int irq, void *data, int core_index)
 
 irqreturn_t rknpu_core0_irq_handler(int irq, void *data)
 {
-   //printk("*** %s\n", __func__);
 	return rknpu_irq_handler(irq, data, 0);
 }
 
 irqreturn_t rknpu_core1_irq_handler(int irq, void *data)
 {
-   printk("*** %s\n", __func__);
 	return rknpu_irq_handler(irq, data, 1);
 }
 
 irqreturn_t rknpu_core2_irq_handler(int irq, void *data)
 {
-   printk("*** %s\n", __func__);
 	return rknpu_irq_handler(irq, data, 2);
 }
 
@@ -731,8 +688,6 @@ static void rknpu_job_timeout_clean(struct rknpu_device *rknpu_dev,
 	unsigned long flags;
 	struct rknpu_subcore_data *subcore_data = NULL;
 	int i = 0;
-
-   printk("*** %s\n", __func__);
 
 	for (i = 0; i < rknpu_dev->config->num_irqs; i++) {
 		if (core_mask & rknpu_core_mask(i)) {
@@ -778,8 +733,6 @@ static int rknpu_submit(struct rknpu_device *rknpu_dev,
 {
 	struct rknpu_job *job = NULL;
 	int ret = -EINVAL;
-
-   printk("*** %s\n", __func__);
 
 	if (args->task_number == 0) {
 		LOG_ERROR("invalid rknpu task number!\n");
@@ -884,8 +837,6 @@ int rknpu_submit_ioctl(struct drm_device *dev, void *data,
 	struct rknpu_device *rknpu_dev = dev_get_drvdata(dev->dev);
 	struct rknpu_submit *args = data;
 
-   printk("*** %s\n", __func__);
-
 	return rknpu_submit(rknpu_dev, args);
 }
 #endif
@@ -895,8 +846,6 @@ int rknpu_submit_ioctl(struct rknpu_device *rknpu_dev, unsigned long data)
 {
 	struct rknpu_submit args;
 	int ret = -EINVAL;
-
-   printk("*** %s\n", __func__);
 
 	if (unlikely(copy_from_user(&args, (struct rknpu_submit *)data,
 				    sizeof(struct rknpu_submit)))) {
@@ -922,8 +871,6 @@ int rknpu_get_hw_version(struct rknpu_device *rknpu_dev, uint32_t *version)
 {
 	void __iomem *rknpu_core_base = rknpu_dev->base[0];
 
-   printk("*** %s\n", __func__);
-
 	if (version == NULL)
 		return -EINVAL;
 
@@ -937,8 +884,6 @@ int rknpu_get_bw_priority(struct rknpu_device *rknpu_dev, uint32_t *priority,
 			  uint32_t *expect, uint32_t *tw)
 {
 	void __iomem *base = rknpu_dev->bw_priority_base;
-
-   printk("*** %s\n", __func__);
 
 	if (!rknpu_dev->config->bw_enable) {
 		LOG_WARN("Get bw_priority is not supported on this device!\n");
@@ -969,8 +914,6 @@ int rknpu_set_bw_priority(struct rknpu_device *rknpu_dev, uint32_t priority,
 {
 	void __iomem *base = rknpu_dev->bw_priority_base;
 
-   printk("*** %s\n", __func__);
-
 	if (!rknpu_dev->config->bw_enable) {
 		LOG_WARN("Set bw_priority is not supported on this device!\n");
 		return 0;
@@ -999,8 +942,6 @@ int rknpu_clear_rw_amount(struct rknpu_device *rknpu_dev)
 {
 	void __iomem *rknpu_core_base = rknpu_dev->base[0];
 	unsigned long flags;
-
-   printk("*** %s\n", __func__);
 
 	if (!rknpu_dev->config->bw_enable) {
 		LOG_WARN("Clear rw_amount is not supported on this device!\n");
@@ -1034,8 +975,6 @@ int rknpu_get_rw_amount(struct rknpu_device *rknpu_dev, uint32_t *dt_wr,
 	void __iomem *rknpu_core_base = rknpu_dev->base[0];
 	int amount_scale = rknpu_dev->config->pc_data_amount_scale;
 
-   printk("*** %s\n", __func__);
-
 	if (!rknpu_dev->config->bw_enable) {
 		LOG_WARN("Get rw_amount is not supported on this device!\n");
 		return 0;
@@ -1063,8 +1002,6 @@ int rknpu_get_total_rw_amount(struct rknpu_device *rknpu_dev, uint32_t *amount)
 	uint32_t dt_rd = 0;
 	uint32_t wd_rd = 0;
 	int ret = -EINVAL;
-
-   printk("*** %s\n", __func__);
 
 	if (!rknpu_dev->config->bw_enable) {
 		LOG_WARN(
