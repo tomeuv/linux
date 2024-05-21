@@ -229,8 +229,8 @@
 	rknpu: npu@fdab0000 {
 		compatible = "rockchip,rk3588-rknpu", "rockchip,rknpu";
 		reg = <0x0 0xfdab0000 0x0 0x9000>,
-		      <0x0 0xfdac0000 0x0 0x10000>,
-		      <0x0 0xfdad0000 0x0 0x10000>;
+		      <0x0 0xfdac0000 0x0 0x9000>,
+		      <0x0 0xfdad0000 0x0 0x9000>;
 		interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH 0>,
 			     <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH 0>,
 			     <GIC_SPI 112 IRQ_TYPE_LEVEL_HIGH 0>;
