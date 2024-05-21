@@ -1262,7 +1262,7 @@ static int rk_iommu_probe(struct platform_device *pdev)
 	if (!dma_dev)
 		dma_dev = &pdev->dev;
 
-	pm_runtime_enable(dev);
+	//pm_runtime_enable(dev);
 
 	for (i = 0; i < iommu->num_irq; i++) {
 		int irq = platform_get_irq(pdev, i);
