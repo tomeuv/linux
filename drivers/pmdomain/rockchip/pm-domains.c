@@ -573,7 +573,7 @@ static int rockchip_pd_power_off(struct generic_pm_domain *domain)
 {
 	struct rockchip_pm_domain *pd = to_rockchip_pd(domain);
 
-	return rockchip_pd_power(pd, false);
+	return -EINVAL; //rockchip_pd_power(pd, false);
 }
 
 static int rockchip_pd_attach_dev(struct generic_pm_domain *genpd,
