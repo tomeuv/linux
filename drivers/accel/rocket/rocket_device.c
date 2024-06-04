@@ -12,6 +12,7 @@
 
 #include "rocket_drv.h"
 #include "rocket_device.h"
+#include "rocket_job.h"
 
 static int rocket_clk_init(struct rocket_device *rdev)
 {
@@ -149,6 +150,8 @@ int rocket_device_init(struct rocket_device *rdev)
 	int i, err;
 	uint32_t version;
 
+	mutex_init(&rdev->sched_lock);
+
 	err = rocket_clk_init(rdev);
 	if (err) {
 		dev_err(rdev->dev, "clk init failed %d\n", err);
@@ -193,6 +196,7 @@ out_clk:
 
 void rocket_device_fini(struct rocket_device *rdev)
 {
+	rocket_job_fini(rdev);
 	rocket_pm_domain_fini(rdev);
 	rocket_reset_fini(rdev);
 	rocket_clk_fini(rdev);

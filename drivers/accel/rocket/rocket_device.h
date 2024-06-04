@@ -62,6 +62,12 @@ struct rocket_compatible {
 	int num_iomem;
 };
 
+struct rocket_queue_state {
+       struct drm_gpu_scheduler sched;
+       u64 fence_context;
+       u64 emit_seqno;
+};
+
 struct rocket_device {
 	struct device *dev;
 	struct drm_device *ddev;
@@ -79,6 +85,20 @@ struct rocket_device {
 
 	struct device *pm_domain_devs[MAX_NUM_CORES];
 	struct device_link *pm_domain_links[MAX_NUM_CORES];
+
+	struct mutex sched_lock;
+
+	struct {
+		struct workqueue_struct *wq;
+		struct work_struct work;
+		atomic_t pending;
+	} reset;
+
+	struct rocket_queue_state queue;
+	spinlock_t job_lock;
+	int irq[MAX_NUM_CORES];
+
+	struct rocket_job *jobs[MAX_NUM_CORES];
 };
 
 int rocket_device_init(struct rocket_device *rdev);
