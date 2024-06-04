@@ -13,9 +13,11 @@ extern "C" {
 
 #define DRM_ROCKET_CREATE_BO			0x00
 #define DRM_ROCKET_SUBMIT			0x01
+#define DRM_ROCKET_WAIT_BO			0x02
 
 #define DRM_IOCTL_ROCKET_CREATE_BO		DRM_IOWR(DRM_COMMAND_BASE + DRM_ROCKET_CREATE_BO, struct drm_rocket_create_bo)
 #define DRM_IOCTL_ROCKET_SUBMIT			DRM_IOW(DRM_COMMAND_BASE + DRM_ROCKET_SUBMIT, struct drm_rocket_submit)
+#define DRM_IOCTL_ROCKET_WAIT_BO		DRM_IOW(DRM_COMMAND_BASE + DRM_ROCKET_WAIT_BO, struct drm_rocket_wait_bo)
 
 /**
  * struct drm_rocket_create_bo - ioctl argument for creating Rocket BOs.
@@ -44,6 +46,20 @@ struct drm_rocket_create_bo {
 
 	/** Offset into the drm node to use for subsequent mmap call. */
 	__u64 offset;
+};
+
+/**
+ * struct drm_rocket_wait_bo - ioctl argument for waiting for
+ * completion of the last DRM_ROCKET_SUBMIT on a BO.
+ *
+ * This is useful for cases where multiple processes might be
+ * rendering to a BO and you want to wait for all rendering to be
+ * completed.
+ */
+struct drm_rocket_wait_bo {
+	__u32 handle;
+	__u32 pad;
+	__s64 timeout_ns;	/* absolute */
 };
 
 /**

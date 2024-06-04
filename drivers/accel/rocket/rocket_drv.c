@@ -70,6 +70,7 @@ static const struct drm_ioctl_desc rocket_drm_driver_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(ROCKET_##n, rocket_ioctl_##func, 0)
 
 	ROCKET_IOCTL(CREATE_BO, create_bo),
+	ROCKET_IOCTL(WAIT_BO, wait_bo),
 	ROCKET_IOCTL(SUBMIT, submit),
 };
 

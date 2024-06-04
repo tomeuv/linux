@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright 2024 Tomeu Vizoso <tomeu@tomeuvizoso.net> */
 
+#include "drm/drm_utils.h"
 #include <drm/drm_device.h>
 #include <drm/rocket_drm.h>
 
@@ -55,4 +56,29 @@ int rocket_ioctl_create_bo(struct drm_device *dev, void *data, struct drm_file *
 	args->dma_address = dma_obj->dma_addr;
 
 	return 0;
+}
+
+int rocket_ioctl_wait_bo(struct drm_device *dev, void *data,
+			 struct drm_file *file_priv)
+{
+	long ret;
+	struct drm_rocket_wait_bo *args = data;
+	struct drm_gem_object *gem_obj;
+	unsigned long timeout = drm_timeout_abs_to_jiffies(args->timeout_ns);
+
+	if (args->pad)
+		return -EINVAL;
+
+	gem_obj = drm_gem_object_lookup(file_priv, args->handle);
+	if (!gem_obj)
+		return -ENOENT;
+
+	ret = dma_resv_wait_timeout(gem_obj->resv, DMA_RESV_USAGE_READ,
+				    true, timeout);
+	if (!ret)
+		ret = timeout ? -ETIMEDOUT : -EBUSY;
+
+	drm_gem_object_put(gem_obj);
+
+	return ret;
 }
