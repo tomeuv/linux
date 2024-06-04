@@ -362,6 +362,7 @@ static inline int rknpu_job_subcore_commit_pc(struct rknpu_job *job,
 	job->int_mask[core_index] = last_task->int_mask;
 
 	REG_WRITE(0x1, RKNPU_OFFSET_PC_OP_EN);
+	trace_printk("*** %s: Submitted job\n", __func__);
 	REG_WRITE(0x0, RKNPU_OFFSET_PC_OP_EN);
 
 	return 0;
@@ -631,6 +632,8 @@ static inline irqreturn_t rknpu_irq_handler(int irq, void *data, int core_index)
 	uint32_t status = 0;
 	unsigned long flags;
 
+	//trace_printk("*** %s: Finished job\n", __func__);
+
 	subcore_data = &rknpu_dev->subcore_datas[core_index];
 
 	spin_lock_irqsave(&rknpu_dev->irq_lock, flags);
@@ -645,6 +648,8 @@ static inline irqreturn_t rknpu_irq_handler(int irq, void *data, int core_index)
 	spin_unlock_irqrestore(&rknpu_dev->irq_lock, flags);
 
 	status = REG_READ(RKNPU_OFFSET_INT_STATUS);
+
+	trace_printk("Finished job %d %x %x\n", core_index, status, REG_READ(RKNPU_OFFSET_INT_RAW_STATUS));
 
 	job->int_status[core_index] = status;
 
