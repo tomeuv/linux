@@ -3,8 +3,10 @@
 /* Copyright 2019 Collabora ltd. */
 /* Copyright 2024 Tomeu Vizoso <tomeu@tomeuvizoso.net> */
 
-#include "drm/drm_utils.h"
-#include "linux/kernel.h"
+#include "drm/drm_file.h"
+#include "drm/drm_gem.h"
+#include "drm/drm_print.h"
+#include "linux/dma-resv.h"
 #include <drm/drm_syncobj.h>
 #include <linux/hardirq.h>
 #include <linux/interrupt.h>
@@ -17,7 +19,6 @@
 #include "rocket_job.h"
 #include "rocket_drv.h"
 #include "rocket_device.h"
-#include "rocket_gem.h"
 
 #define JOB_TIMEOUT_MS 500
 
@@ -164,8 +165,6 @@ static void rocket_job_hw_submit(struct rocket_job *job)
 	bool task_pp_en = 1;
 	bool task_count = 1;
 
-	//trace_printk("job %p job->next_task_idx %d job->task_count %d task->regcmd_count 0x%x\n", job, job->next_task_idx, job->task_count, job->tasks[job->next_task_idx].regcmd_count);
-
 	/* GO ! */
 
 	core = rocket_enqueue_job(rdev, job);
@@ -191,8 +190,6 @@ static void rocket_job_hw_submit(struct rocket_job *job)
 		rocket_write(rdev, 0, RKNN_OFFSET_PC_DMA_BASE_ADDR, 0x0);
 
 		rocket_write(rdev, 0, RKNN_OFFSET_PC_OP_EN, 0x1);
-
-		//trace_printk("Submitted job\n");
 
 		dev_dbg(rdev->dev,
 			"Submitted regcmd at 0x%llx to core %d",
@@ -329,8 +326,6 @@ static struct dma_fence *rocket_job_run(struct drm_sched_job *sched_job)
 	struct dma_fence *fence = NULL;
 	int ret;
 
-	//trace_printk("%d job->next_task_idx %d job->task_count %d\n", 1, job->next_task_idx, job->task_count);
-
 	if (unlikely(job->base.s_fence->finished.error))
 		return NULL;
 
@@ -363,99 +358,26 @@ static struct dma_fence *rocket_job_run(struct drm_sched_job *sched_job)
 
 void rocket_job_enable_interrupts(struct rocket_device *rdev)
 {
-	int j;
-	u32 irq_mask = 0;
-
-#if 0
-	clear_bit(ROCKET_COMP_BIT_JOB, rdev->is_suspended);
-
-	for (j = 0; j < NUM_JOB_SLOTS; j++) {
-		irq_mask |= MK_JS_MASK(j);
-	}
-
-	job_write(rdev, JOB_INT_CLEAR, irq_mask);
-	job_write(rdev, JOB_INT_MASK, irq_mask);
-#endif
+	rocket_write(rdev, 0, RKNN_OFFSET_INT_MASK, (1 << RKNN_DPU_GROUP_0) | (1 << RKNN_DPU_GROUP_1));
 }
 
 void rocket_job_suspend_irq(struct rocket_device *rdev)
 {
 	int i;
-#if 0
-	set_bit(ROCKET_COMP_BIT_JOB, rdev->is_suspended);
 
-	job_write(rdev, JOB_INT_MASK, 0);
-#endif
+	rocket_write(rdev, 0, RKNN_OFFSET_INT_MASK, 0x0);
+
 	for (i = 0; i < rdev->comp->num_irqs; i++)
 		synchronize_irq(rdev->irq[i]);
-}
-
-static void rocket_job_handle_err(struct rocket_device *rdev,
-				    struct rocket_job *job,
-				    unsigned int js)
-{
-#if 0
-	u32 js_status = job_read(rdev, JS_STATUS(js));
-	const char *exception_name = rocket_exception_name(js_status);
-	bool signal_fence = true;
-
-	if (!rocket_exception_is_fault(js_status)) {
-		dev_dbg(rdev->dev, "js event, js=%d, status=%s, head=0x%x, tail=0x%x",
-			js, exception_name,
-			job_read(rdev, JS_HEAD_LO(js)),
-			job_read(rdev, JS_TAIL_LO(js)));
-	} else {
-		dev_err(rdev->dev, "js fault, js=%d, status=%s, head=0x%x, tail=0x%x",
-			js, exception_name,
-			job_read(rdev, JS_HEAD_LO(js)),
-			job_read(rdev, JS_TAIL_LO(js)));
-	}
-
-	if (js_status == DRM_rocket_EXCEPTION_STOPPED) {
-		/* Update the job head so we can resume */
-		job->jc = job_read(rdev, JS_TAIL_LO(js)) |
-			  ((u64)job_read(rdev, JS_TAIL_HI(js)) << 32);
-
-		/* The job will be resumed, don't signal the fence */
-		signal_fence = false;
-	} else if (js_status == DRM_rocket_EXCEPTION_TERMINATED) {
-		/* Job has been hard-stopped, flag it as canceled */
-		dma_fence_set_error(job->done_fence, -ECANCELED);
-		job->jc = 0;
-	} else if (rocket_exception_is_fault(js_status)) {
-		/* We might want to provide finer-grained error code based on
-		 * the exception type, but unconditionally setting to EINVAL
-		 * is good enough for now.
-		 */
-		dma_fence_set_error(job->done_fence, -EINVAL);
-		job->jc = 0;
-	}
-
-	rocket_mmu_as_put(rdev, job->mmu);
-	rocket_devfreq_record_idle(&rdev->rdevfreq);
-
-	if (signal_fence)
-		dma_fence_signal_locked(job->done_fence);
-
-	pm_runtime_put_autosuspend(rdev->dev);
-
-	if (rocket_exception_needs_reset(rdev, js_status)) {
-		atomic_set(&rdev->reset.pending, 1);
-		drm_sched_fault(&rdev->js->queue[js].sched);
-	}
-#endif
 }
 
 static void rocket_job_handle_done(struct rocket_device *rdev,
 				   struct rocket_job *job)
 {
-	//trace_printk("job %p job->next_task_idx %d job->task_count %d\n", job, job->next_task_idx, job->task_count);
 	if (job->next_task_idx < job->task_count) {
 		rocket_job_hw_submit(job);
 		return;
 	}
-
-	//rocket_devfreq_record_idle(&rdev->rdevfreq);
 
 	dma_fence_signal_locked(job->done_fence);
 	pm_runtime_put_autosuspend(rdev->dev);
@@ -483,39 +405,12 @@ static void rocket_job_handle_irq(struct rocket_device *rdev)
 	spin_unlock(&rdev->job_lock);
 }
 
-static u32 rocket_active_slots(struct rocket_device *rdev,
-				 u32 *js_state_mask, u32 js_state)
-{
-#if 0
-	u32 rawstat;
-
-	if (!(js_state & *js_state_mask))
-		return 0;
-
-	rawstat = job_read(rdev, JOB_INT_RAWSTAT);
-	if (rawstat) {
-		unsigned int i;
-
-		for (i = 0; i < NUM_JOB_SLOTS; i++) {
-			if (rawstat & MK_JS_MASK(i))
-				*js_state_mask &= ~MK_JS_MASK(i);
-		}
-	}
-
-	return js_state & *js_state_mask;
-#else
-	return 0;
-#endif
-}
-
 static void
 rocket_reset(struct rocket_device *rdev,
 	       struct drm_sched_job *bad)
 {
-	u32 js_state, js_state_mask = 0xffffffff;
-	unsigned int i, j;
+	unsigned int i;
 	bool cookie;
-	int ret;
 
 	if (!atomic_read(&rdev->reset.pending))
 		return;
@@ -540,27 +435,11 @@ rocket_reset(struct rocket_device *rdev,
 	if (bad)
 		drm_sched_increase_karma(bad);
 
-#if 0
 	/* Mask job interrupts and synchronize to make sure we won't be
 	 * interrupted during our reset.
 	 */
-	job_write(rdev, JOB_INT_MASK, 0);
-	synchronize_irq(rdev->irq);
-
-	for (i = 0; i < NUM_JOB_SLOTS; i++) {
-		/* Cancel the next job and soft-stop the running job. */
-		job_write(rdev, JS_COMMAND_NEXT(i), JS_COMMAND_NOP);
-		job_write(rdev, JS_COMMAND(i), JS_COMMAND_SOFT_STOP);
-	}
-
-	/* Wait at most 10ms for soft-stops to complete */
-	ret = readl_poll_timeout(rdev->iomem + JOB_INT_JS_STATE, js_state,
-				 !rocket_active_slots(rdev, &js_state_mask, js_state),
-				 10, 10000);
-#endif
-
-	if (ret)
-		dev_err(rdev->dev, "Soft-stop failed\n");
+	rocket_write(rdev, 0, RKNN_OFFSET_INT_MASK, 0x0);
+	synchronize_irq(rdev->irq[0]);
 
 	/* Handle the remaining interrupts before we reset. */
 	rocket_job_handle_irq(rdev);
@@ -586,7 +465,7 @@ rocket_reset(struct rocket_device *rdev,
 	/* rocket_device_reset() unmasks job interrupts, but we want to
 	 * keep them masked a bit longer.
 	 */
-	//job_write(rdev, JOB_INT_MASK, 0);
+	rocket_write(rdev, 0, RKNN_OFFSET_INT_MASK, 0x0);
 
 	/* GPU has been reset, we can clear the reset pending bit. */
 	atomic_set(&rdev->reset.pending, 0);
@@ -606,11 +485,7 @@ rocket_reset(struct rocket_device *rdev,
 	drm_sched_start(&rdev->queue.sched, true);
 
 	/* Re-enable job interrupts now that everything has been restarted. */
-	#if 0
-	job_write(rdev, JOB_INT_MASK,
-		  GENMASK(16 + NUM_JOB_SLOTS - 1, 16) |
-		  GENMASK(NUM_JOB_SLOTS - 1, 0));
-	#endif
+	rocket_write(rdev, 0, RKNN_OFFSET_INT_MASK, (1 << RKNN_DPU_GROUP_0) | (1 << RKNN_DPU_GROUP_1));
 	dma_fence_end_signalling(cookie);
 }
 
@@ -620,8 +495,6 @@ static enum drm_gpu_sched_stat rocket_job_timedout(struct drm_sched_job
 	struct rocket_job *job = to_rocket_job(sched_job);
 	struct rocket_device *rdev = job->rdev;
 	int i;
-
-	//trace_printk("%d\n", 1);
 
 	/*
 	 * If the GPU managed to complete this jobs fence, the timeout is
@@ -647,15 +520,7 @@ static enum drm_gpu_sched_stat rocket_job_timedout(struct drm_sched_job
 		return DRM_GPU_SCHED_STAT_NOMINAL;
 	}
 
-#if 0
-	dev_err(rdev->dev, "gpu sched timeout, js=%d, config=0x%x, status=0x%x, head=0x%x, tail=0x%x, sched_job=%p",
-		js,
-		job_read(rdev, JS_CONFIG(js)),
-		job_read(rdev, JS_STATUS(js)),
-		job_read(rdev, JS_HEAD_LO(js)),
-		job_read(rdev, JS_TAIL_LO(js)),
-		sched_job);
-#endif
+	dev_err(rdev->dev, "gpu sched timeout");
 
 	atomic_set(&rdev->reset.pending, 1);
 	rocket_reset(rdev, sched_job);
@@ -689,12 +554,6 @@ static irqreturn_t rocket_job_irq_handler_thread(int irq, void *data)
 static irqreturn_t rocket_job_irq_handler(int irq, void *data)
 {
 	struct rocket_device *rdev = data;
-	uint32_t status, raw_status;
-
-	status = rocket_read(rdev, 0, RKNN_OFFSET_INT_STATUS);
-	raw_status = rocket_read(rdev, 0, RKNN_OFFSET_INT_RAW_STATUS);
-
-	//trace_printk("Finished job %x %x\n", status, raw_status);
 
 	rocket_write(rdev, 0, RKNN_OFFSET_INT_MASK, 0x0);
 
@@ -758,9 +617,7 @@ err_sched:
 
 void rocket_job_fini(struct rocket_device *rdev)
 {
-	int j;
-
-	//job_write(rdev, JOB_INT_MASK, 0);
+	rocket_write(rdev, 0, RKNN_OFFSET_INT_MASK, 0x0);
 
 	drm_sched_fini(&rdev->queue.sched);
 
@@ -786,29 +643,9 @@ int rocket_job_open(struct rocket_file_priv *rocket_priv)
 
 void rocket_job_close(struct rocket_file_priv *rocket_priv)
 {
-	struct rocket_device *rdev = rocket_priv->rdev;
 	struct drm_sched_entity *entity = &rocket_priv->sched_entity;
-	int i;
 
 	drm_sched_entity_destroy(entity);
-
-	/* Kill in-flight jobs */
-	spin_lock(&rdev->job_lock);
-
-	for (i = ARRAY_SIZE(rdev->jobs) - 1; i >= 0; i--) {
-		struct rocket_job *job = rdev->jobs[i];
-
-		if (!job || job->base.entity != entity)
-			continue;
-
-#if 0
-		job_write(rdev, JS_COMMAND(i), JS_COMMAND_HARD_STOP);
-
-		/* Jobs can outlive their file context */
-		job->engine_usage = NULL;
-#endif
-	}
-	spin_unlock(&rdev->job_lock);
 }
 
 int rocket_job_is_idle(struct rocket_device *rdev)
@@ -826,8 +663,6 @@ static int rocket_ioctl_submit_job(struct drm_device *dev, struct drm_file *file
 	struct rocket_file_priv *file_priv = file->driver_priv;
 	struct rocket_job *rjob = NULL;
 	int ret = 0;
-
-	//trace_printk("%d\n", 1);
 
 	if (job->task_count == 0)
 		return -EINVAL;
@@ -885,8 +720,6 @@ int rocket_ioctl_submit(struct drm_device *dev, void *data, struct drm_file *fil
 	struct drm_rocket_job *jobs;
 	int ret = 0;
 	unsigned int i = 0;
-
-	//trace_printk("%d\n", 1);
 
 	jobs = kvmalloc_array(args->job_count, sizeof(*jobs), GFP_KERNEL);
 	if (!jobs) {
